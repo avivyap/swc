@@ -1,10 +1,7 @@
 #!/bin/bash
 
-# swc, Author avivyap (@avivyap)
+# swc, Autor: avivyap (@avivyap)
 
-#!/bin/bash
-
-# Autor: avivyap (@avivyap)
 echo -e "\e[93mHecho por\e[0m"
 echo -e "\e[93mAvivyap\e[0m"
 sleep 0.5
@@ -18,6 +15,30 @@ yellowColour="\e[93m"
 purpleColour="\e[95m"
 endColour="\e[0m"
 
+# Verifica si el usuario es root
+echo -e "${purpleColour}[+]${endColour} Comprobando permisos..."
+sleep 1
+if [[ $EUID -ne 0 ]]; then
+    echo "Este script debe ejecutarse como root." >&2
+    exit 1
+fi
+
+echo -e "${purpleColour}[+]${endColour} Comprobando herramientas necesarias..."
+sleep 1
+
+# Verifica si macchanger está instalado
+if ! command -v macchanger &> /dev/null; then
+    echo -e "${purpleColour}[!]${endColour} macchanger no está instalado. Instalándolo..."
+    sleep 1
+    apt update && apt install -y macchanger
+    if ! command -v macchanger &> /dev/null; then
+        echo -e "${purpleColour}[!]${endColour} Error al instalar macchanger. Intenta instalarlo manualmente."
+        exit 1
+    fi
+    echo -e "${purpleColour}[+]${endColour} macchanger instalado con éxito."
+sleep 1
+fi
+
 # Listar todas las tarjetas de red disponibles numeradas y coloreadas
 echo -e "${purpleColour}[+] ${endColour}${yellowColour}Tarjetas de red disponibles:${endColour}"
 ip -o link show | awk -F': ' '{print NR".", "\033[1m"$2"\033[0m"}'
@@ -30,29 +51,24 @@ echo -e "${purpleColour}[+]${endColour} Por favor ingresa el ${yellowColour}núm
 read opcion
 
 # Obtener el nombre de la tarjeta de red seleccionada
-nombre=$(ip -o link show | awk -F': ' -v opcion="$opcion" 'NR==opcion {print $2}')
+INTERFACE=$(ip -o link show | awk -F': ' -v opcion="$opcion" 'NR==opcion {print $2}')
 
-# Desactivar la interfaz seleccionada
-ifconfig $nombre down
+if [[ -z "$INTERFACE" ]]; then
+    echo "Número de interfaz no válido." >&2
+    exit 1
+fi
 
-sleep 2
+# Guardar MAC original
+ORIGINAL_MAC=$(ip link show "$INTERFACE" | awk '/ether/ {print $2}')
 
-# Solicitar el nuevo nombre para la interfaz
-echo -e "${purpleColour}[+]${endColour} ¿Qué ${yellowColour}nombre${endColour} le quieres poner a la tarjeta de red?"
-read nuevo_nombre
+# Nueva MAC fija del script
+NEW_MAC="00:1c:3f:5a:2b:cc"
 
-# Cambiar el nombre de la interfaz
-ip link set dev $nombre name $nuevo_nombre
+echo -e "${purpleColour}[+]${endColour} Cambiando la dirección MAC de ${yellowColour}$INTERFACE${endColour} a ${yellowColour}$NEW_MAC${endColour}"
 
-sleep 2
+# Aplicar cambios con macchanger
+ip link set dev "$INTERFACE" down
+macchanger --mac="$NEW_MAC" "$INTERFACE"
+ip link set dev "$INTERFACE" up
 
-# Cambiar la dirección MAC de la interfaz
-macchanger --mac=00:1c:3f:5a:2b:cc $nuevo_nombre
-
-sleep 2
-
-# Activar la interfaz con el nuevo nombre
-ifconfig $nuevo_nombre up
-
-echo -e "${purpleColour}[+]${endColour} Configuración completada."
-
+echo -e "${purpleColour}[+]${endColour} Dirección MAC cambiada con éxito."
